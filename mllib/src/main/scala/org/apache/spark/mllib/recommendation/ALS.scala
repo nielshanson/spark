@@ -279,6 +279,10 @@ class ALS private (
       userFactors.count()
       prodFactors.count()
     }
+    val explanation = true
+    if (explanation) {
+      new ALSExplain().explain(prodFactors, ratings, lambda, alpha)
+    }
     new MatrixFactorizationModel(rank, userFactors, prodFactors)
   }
 
