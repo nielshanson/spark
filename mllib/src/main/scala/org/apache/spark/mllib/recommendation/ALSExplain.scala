@@ -25,10 +25,26 @@ import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.rdd.RDD
 
 
+case class productScore(productId : Int,
+                        cu: Double,
+                        similarity: Double,
+                        score: Double,
+                        percentage: Double)
+
+case class productExplanation(explainedPid: Int,
+                        score: Double,
+                        productScores: Array[productScore])
+
+case class userExplanation(user: Int,
+                           productExplanations: Array[productExplanation])
+
+
+
 @SerialVersionUID(100L)
 class ALSExplain extends Serializable {
   def explain( prodFactors: RDD[(Int, Array[Double])],
-               ratings: RDD[Rating], lambda: Double, alpha: Double): Unit = {
+               ratings: RDD[Rating], lambda: Double, alpha: Double):
+  RDD[userExplanation] = {
     val sc = prodFactors.context
     val indexedProdFactors = prodFactors.zipWithIndex().cache()
     val productIndexLookup = indexedProdFactors.map( v => ( v._1._1, v._2))
@@ -59,18 +75,18 @@ class ALSExplain extends Serializable {
       .join(productIndexLookup)
       .map( joined => ( joined._2._1.user, (joined._2._2, joined._2._1.rating * alpha)))
       .groupByKey().repartition(1)
-      .map( group => (( group._1,
+      .map( group => userExplanation( group._1,
         process(group._2.toArray, local_YT,
-          local_Y, local_YTY, indexMap, productMap, lambdaI ))).toString()).cache()
-    // userRows.collect().foreach(println)
-    userRows.saveAsTextFile("output")
+          local_Y, local_YTY, indexMap, productMap, lambdaI ))).cache()
+    userRows
+    // userRows.saveAsTextFile("output")
 
   }
 
   def process(array: Array[(Long, Double)], YT: Matrix[Double],
               Y: Matrix[Double], local_YTY: Matrix[Double], indexLookup: Map[Int, Long],
               productLookup: Map[Long, Int], lambdaI: Matrix[Double])
-  : String = {
+  : Array[productExplanation] = {
   // Array[(Int, (Double, List[Map[String, Double]]))] = {
     var list : List[Double] = List.fill(Y.rows)(0.0)
     for ( key <- array ) {
@@ -84,27 +100,34 @@ class ALSExplain extends Serializable {
     val result = S(IndexedSeq(
       indexLookup(1).toInt, indexLookup(2).toInt), ::)
     S(*, ::).map( x => generateExplain(x, array, productLookup))
-      .toArray.zipWithIndex.map( row => (productLookup(row._2.toLong), row._1)).mkString("|")
+      .toArray.zipWithIndex.map(
+      row => productExplanation(productLookup(row._2.toLong), row._1._1, row._1._2))
   }
 
   def generateExplain(row: breeze.linalg.Vector[Double],
                       cu: Array[(Long, Double)],
-                      productLookup: Map[Long, Int]): (Double, List[Map[String, Double]]) =
+                      productLookup: Map[Long, Int]): (Double, Array[productScore]) =
   {
-    val result : ListBuffer[Map[String, Double]] = new ListBuffer[Map[String, Double]]
+    val result : ListBuffer[productScore] = new ListBuffer[productScore]
     var sum: Double = 0.0
     for ( key <- cu ) {
       val score = row(key._1.toInt) * (1 + key._2)
-      val item = Map("productId" -> productLookup(key._1).toDouble,
-        "cu" -> (1 + key._2),
-        "s" -> row(key._1.toInt),
-        "score" ->  score
-      )
       sum = sum + score
+    }
+
+    for ( key <- cu ) {
+      val score = row(key._1.toInt) * (1 + key._2)
+      val item = new productScore(
+        productId = productLookup(key._1),
+        cu = (1 + key._2),
+        similarity = row(key._1.toInt),
+        score = score,
+        percentage = score/sum
+      )
       result += item
     }
 
-    (sum, result.sortBy(-_("score")).take(2).toList)
+    (sum, result.sortBy(-_.percentage).take(2).toArray)
   }
 
   def toIndexedMatrix(features: RDD[(Long, Array[Double])]): IndexedRowMatrix = {
