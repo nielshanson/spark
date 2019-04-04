@@ -51,10 +51,13 @@ if __name__ == "__main__":
 
     # Build the recommendation model using ALS on the training data
     # Note we set cold start strategy to 'drop' to ensure we don't get NaN evaluation metrics
-    als = ALS(maxIter=5, regParam=0.01, userCol="userId", itemCol="movieId", ratingCol="rating",
+    als = ALS(maxIter=5, regParam=0.01, implicitPrefs=True,userCol="userId", itemCol="movieId", ratingCol="rating",
               coldStartStrategy="drop")
+     
     model = als.fit(training)
     explanation = ALSExplain().explain(model.itemFactors, training, userCol="userId", itemCol="movieId", ratingCol="rating")
     explanation.printSchema()
     explanation.show(1, False)
+    predictions = model.transform(ratings)
+    predictions.where("userId = 0 and movieId = 2").show()
     spark.stop()

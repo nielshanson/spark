@@ -26,8 +26,6 @@ import org.apache.spark.rdd.RDD
 
 
 case class productScore(productId : Int,
-                        cu: Double,
-                        similarity: Double,
                         score: Double,
                         percentage: Double)
 
@@ -48,6 +46,7 @@ class ALSExplain extends Serializable {
     val sc = prodFactors.context
     val indexedProdFactors = prodFactors.zipWithIndex().cache()
     val productIndexLookup = indexedProdFactors.map( v => ( v._1._1, v._2))
+    val productToIndex = indexedProdFactors.map( v => (v._1._1, (v._2, v._1._2)))
     val indexedFactors = indexedProdFactors.map( v => (v._2, v._1._2)).cache()
 
     val YIndexMatrix = toIndexedMatrix(indexedFactors)
@@ -55,8 +54,6 @@ class ALSExplain extends Serializable {
     val YT = Y.transpose.cache()
     val YTY = YT.multiply(Y).cache()
     // printIndexedMatrix(YTY.toIndexedRowMatrix())
-
-
 
     val local_YT = sc.broadcast(YT.toLocalMatrix().asBreeze).value
     val local_Y = sc.broadcast(Y.toLocalMatrix().asBreeze).value
@@ -71,56 +68,63 @@ class ALSExplain extends Serializable {
     val productMap = sc.broadcast(indexCollect
       .map( keyValue => (keyValue._2, keyValue._1)).toMap).value
 
-    val userRows = ratings.map( rating => (rating.product, rating))
-      .join(productIndexLookup)
-      .map( joined => ( joined._2._1.user, (joined._2._2, joined._2._1.rating * alpha)))
-      .groupByKey().repartition(1)
-      .map( group => userExplanation( group._1,
-        process(group._2.toArray, local_YT,
-          local_Y, local_YTY, indexMap, productMap, lambdaI ))).cache()
-    userRows
-    // userRows.saveAsTextFile("output")
-
+    val userExplanationRDD = ratings
+      .map( rating => (rating.product, rating))
+      .join(productToIndex)
+      .map{
+        case (_, joinedRow) =>
+          (joinedRow._1.user, (joinedRow._2, (joinedRow._1.rating * alpha)))
+      }.groupByKey().map( group => userExplanation(group._1,
+      userExlain(group._2.toArray, local_YT, local_Y, local_YTY, lambdaI, indexMap, productMap)))
+    userExplanationRDD
   }
 
-  def process(array: Array[(Long, Double)], YT: Matrix[Double],
-              Y: Matrix[Double], local_YTY: Matrix[Double], indexLookup: Map[Int, Long],
-              productLookup: Map[Long, Int], lambdaI: Matrix[Double])
-  : Array[productExplanation] = {
-  // Array[(Int, (Double, List[Map[String, Double]]))] = {
-    var list : List[Double] = List.fill(Y.rows)(0.0)
-    for ( key <- array ) {
-      list = list.updated(key._1.toInt, key._2)
-    }
-    val CU = diag(breeze.linalg.DenseVector(list.toArray))
+  def userExlain(array: Array[((Long, Array[Double]), Double)], local_YT: Matrix[Double],
+                 local_Y: Matrix[Double],
+                 local_YTY: Matrix[Double], lambdaI: Matrix[Double],
+                 indexLookup: Map[Int, Long],
+                 productLookup: Map[Long, Int]) : Array[productExplanation] = {
 
-    val A = YT.toDenseMatrix * CU.toDenseMatrix * Y.toDenseMatrix
-    val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI.toDenseMatrix)
-    val S = (Y * W * YT).toDenseMatrix
-    val result = S(IndexedSeq(
-      indexLookup(1).toInt, indexLookup(2).toInt), ::)
-    S(*, ::).map( x => generateExplain(x, array, productLookup))
+    val YTCUMinusI = array.map(row => (row._1._1, row._1._2.map(_ * row._2)))
+      .toSeq.sortBy(_._1).map(_._2.toSeq)
+    val YTCUMinusIMatrix = new breeze.linalg.
+    DenseMatrix(local_YTY.rows, array.length, YTCUMinusI.flatten.toArray)
+
+    val YTCU = array.map(row => (row._1._1, row._1._2.map( _ * (row._2 + 1))))
+      .toSeq.sortBy(_._1).map(_._2.toSeq)
+    val YTCUMatrix = new breeze.linalg.
+    DenseMatrix(local_YTY.rows, array.length, YTCU.flatten.toArray)
+
+    val cuIndex = array.sortBy(_._1._1).map(_._1._1)
+      .zipWithIndex.map( row => (row._2, row._1)).toMap
+
+    val Y = array.map(row => (row._1._1, row._1._2)).toSeq.sortBy(_._1).map(_._2.toSeq)
+    val YMatrix = new breeze.linalg.DenseMatrix(local_YTY.rows, array.length, Y.flatten.toArray).t
+
+    val A = YTCUMinusIMatrix * YMatrix
+    val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI.toDenseMatrix).toDenseMatrix
+    val S = (local_Y * W * YTCUMatrix).toDenseMatrix
+    S(*, ::).map( x => generateExplain(x, cuIndex, productLookup))
       .toArray.zipWithIndex.map(
-      row => productExplanation(productLookup(row._2.toLong), row._1._1, row._1._2))
+      row => productExplanation(productLookup(row._2), row._1._1, row._1._2))
+      .sortBy(_.explainedPid)
   }
 
   def generateExplain(row: breeze.linalg.Vector[Double],
-                      cu: Array[(Long, Double)],
+                      cuIndex: Map[Int, Long],
                       productLookup: Map[Long, Int]): (Double, Array[productScore]) =
   {
     val result : ListBuffer[productScore] = new ListBuffer[productScore]
     var sum: Double = 0.0
-    for ( key <- cu ) {
-      val score = row(key._1.toInt) * (1 + key._2)
+    for ( key <- cuIndex ) {
+      val score = row(key._1)
       sum = sum + score
     }
 
-    for ( key <- cu ) {
-      val score = row(key._1.toInt) * (1 + key._2)
+    for ( key <- cuIndex ) {
+      val score = row(key._1)
       val item = new productScore(
-        productId = productLookup(key._1),
-        cu = (1 + key._2),
-        similarity = row(key._1.toInt),
+        productId = productLookup(key._2),
         score = score,
         percentage = score/sum
       )
