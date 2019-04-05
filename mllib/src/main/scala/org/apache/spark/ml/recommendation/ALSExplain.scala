@@ -31,6 +31,7 @@ class ALSExplain extends Serializable{
                userCol: String,
                itemCol: String,
                ratingCol: String,
+               topExplanation: Int,
                lambda: Double = 0.1,
                alpha: Double = 1.0): DataFrame = {
 
@@ -46,7 +47,7 @@ class ALSExplain extends Serializable{
       itemDF.rdd.map(row => (row.getInt(0),
         row.getAs[WrappedArray[Float]](1).toArray.map(_.toDouble)))
     val explanation = new org.apache.spark.mllib.recommendation.ALSExplain()
-      .explain(prodFactors, ratings, lambda, alpha)
+      .explain(prodFactors, ratings, lambda, alpha, topExplanation)
     val df = spark.createDataFrame(explanation)
     df
   }

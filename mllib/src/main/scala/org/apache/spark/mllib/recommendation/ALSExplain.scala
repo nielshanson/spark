@@ -41,7 +41,7 @@ case class userExplanation(user: Int,
 @SerialVersionUID(100L)
 class ALSExplain extends Serializable {
   def explain( prodFactors: RDD[(Int, Array[Double])],
-               ratings: RDD[Rating], lambda: Double, alpha: Double):
+               ratings: RDD[Rating], lambda: Double, alpha: Double, topExplanation: Int):
   RDD[userExplanation] = {
     val sc = prodFactors.context
     val indexedProdFactors = prodFactors.zipWithIndex().cache()
@@ -75,7 +75,8 @@ class ALSExplain extends Serializable {
         case (_, joinedRow) =>
           (joinedRow._1.user, (joinedRow._2, (joinedRow._1.rating * alpha)))
       }.groupByKey().map( group => userExplanation(group._1,
-      userExlain(group._2.toArray, local_YT, local_Y, local_YTY, lambdaI, indexMap, productMap)))
+      userExlain(group._2.toArray, local_YT, local_Y, local_YTY,
+        lambdaI, indexMap, productMap, topExplanation)))
     userExplanationRDD
   }
 
@@ -83,7 +84,7 @@ class ALSExplain extends Serializable {
                  local_Y: Matrix[Double],
                  local_YTY: Matrix[Double], lambdaI: Matrix[Double],
                  indexLookup: Map[Int, Long],
-                 productLookup: Map[Long, Int]) : Array[productExplanation] = {
+                 productLookup: Map[Long, Int], topExplanation: Int) : Array[productExplanation] = {
 
     val YTCUMinusI = array.map(row => (row._1._1, row._1._2.map(_ * row._2)))
       .toSeq.sortBy(_._1).map(_._2.toSeq)
@@ -104,7 +105,7 @@ class ALSExplain extends Serializable {
     val A = YTCUMinusIMatrix * YMatrix
     val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI.toDenseMatrix).toDenseMatrix
     val S = (local_Y * W * YTCUMatrix).toDenseMatrix
-    S(*, ::).map( x => generateExplain(x, cuIndex, productLookup))
+    S(*, ::).map( x => generateExplain(x, cuIndex, productLookup, topExplanation))
       .toArray.zipWithIndex.map(
       row => productExplanation(productLookup(row._2), row._1._1, row._1._2))
       .sortBy(_.explainedPid)
@@ -112,7 +113,8 @@ class ALSExplain extends Serializable {
 
   def generateExplain(row: breeze.linalg.Vector[Double],
                       cuIndex: Map[Int, Long],
-                      productLookup: Map[Long, Int]): (Double, Array[productScore]) =
+                      productLookup: Map[Long, Int],
+                      topExplanation: Int): (Double, Array[productScore]) =
   {
     val result : ListBuffer[productScore] = new ListBuffer[productScore]
     var sum: Double = 0.0
@@ -131,7 +133,7 @@ class ALSExplain extends Serializable {
       result += item
     }
 
-    (sum, result.sortBy(-_.percentage).take(2).toArray)
+    (sum, result.sortBy(-_.percentage).take(topExplanation).toArray)
   }
 
   def toIndexedMatrix(features: RDD[(Long, Array[Double])]): IndexedRowMatrix = {

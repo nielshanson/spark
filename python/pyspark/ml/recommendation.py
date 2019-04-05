@@ -19,12 +19,13 @@ import sys
 
 from pyspark import since, keyword_only
 from pyspark.ml.util import *
-from pyspark.ml.wrapper import JavaEstimator, JavaModel
+from pyspark.ml.wrapper import JavaEstimator, JavaModel, JavaWrapper
 from pyspark.ml.param.shared import *
 from pyspark.ml.common import inherit_doc
 
 
-__all__ = ['ALS', 'ALSModel']
+__all__ = ['ALS', 'ALSModel', 'ALSExplain']
+
 
 
 @inherit_doc
@@ -79,27 +80,27 @@ class ALS(JavaEstimator, HasCheckpointInterval, HasMaxIter, HasPredictionCol, Ha
     >>> test = spark.createDataFrame([(0, 2), (1, 0), (2, 0)], ["user", "item"])
     >>> predictions = sorted(model.transform(test).collect(), key=lambda r: r[0])
     >>> predictions[0]
-    Row(user=0, item=2, prediction=0.6929101347923279)
+    Row(user=0, item=2, prediction=-0.13807615637779236)
     >>> predictions[1]
-    Row(user=1, item=0, prediction=3.47356915473938)
+    Row(user=1, item=0, prediction=2.6258413791656494)
     >>> predictions[2]
-    Row(user=2, item=0, prediction=-0.8991986513137817)
+    Row(user=2, item=0, prediction=-1.5018409490585327)
     >>> user_recs = model.recommendForAllUsers(3)
     >>> user_recs.where(user_recs.user == 0)\
         .select("recommendations.item", "recommendations.rating").collect()
-    [Row(item=[0, 1, 2], rating=[3.910..., 1.997..., 0.692...])]
+    [Row(item=[0, 1, 2], rating=[3.910..., 1.992..., -0.138...])]
     >>> item_recs = model.recommendForAllItems(3)
     >>> item_recs.where(item_recs.item == 2)\
         .select("recommendations.user", "recommendations.rating").collect()
-    [Row(user=[2, 1, 0], rating=[4.892..., 3.991..., 0.692...])]
+    [Row(user=[2, 1, 0], rating=[4.901..., 3.981..., -0.138...])]
     >>> user_subset = df.where(df.user == 2)
     >>> user_subset_recs = model.recommendForUserSubset(user_subset, 3)
     >>> user_subset_recs.select("recommendations.item", "recommendations.rating").first()
-    Row(item=[2, 1, 0], rating=[4.892..., 1.076..., -0.899...])
+    Row(item=[2, 1, 0], rating=[4.901..., 1.056..., -1.501...])
     >>> item_subset = df.where(df.item == 0)
     >>> item_subset_recs = model.recommendForItemSubset(item_subset, 3)
     >>> item_subset_recs.select("recommendations.user", "recommendations.rating").first()
-    Row(user=[0, 1, 2], rating=[3.910..., 3.473..., -0.899...])
+    Row(user=[0, 1, 2], rating=[3.910..., 2.625..., -1.501...])
     >>> als_path = temp_path + "/als"
     >>> als.save(als_path)
     >>> als2 = ALS.load(als_path)
@@ -453,6 +454,23 @@ class ALSModel(JavaModel, JavaMLWritable, JavaMLReadable):
                  stored as an array of (userCol, rating) Rows.
         """
         return self._call_java("recommendForItemSubset", dataset, numUsers)
+
+@inherit_doc
+class ALSExplain(JavaWrapper):
+    """
+    ALSExplain
+    """
+    @keyword_only
+    def __init__(self):
+        super(ALSExplain, self).__init__()
+        self._java_obj = self._new_java_obj("org.apache.spark.ml.recommendation.ALSExplain")
+
+    @since("2.3.0")
+    def explain(self, itemDF, dataset, userCol, itemCol, ratingCol, topExplanation,  _lambda = 0.1, alpha = 1.0):
+        """
+        Returns explanation for each user
+        """
+        return self._call_java("explain", itemDF, dataset, userCol, itemCol, ratingCol, topExplanation, _lambda, alpha)
 
 
 if __name__ == "__main__":
