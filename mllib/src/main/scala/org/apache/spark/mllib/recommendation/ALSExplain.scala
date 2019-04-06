@@ -17,24 +17,23 @@
 
 package org.apache.spark.mllib.recommendation
 
-import breeze.linalg._
+import breeze.linalg.{*, diag, inv, DenseMatrix, DenseVector, Matrix, Vector}
 import scala.collection.mutable.ListBuffer
 
-import org.apache.spark.mllib.linalg.{DenseMatrix, DenseVector, Vectors}
+import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.rdd.RDD
 
 
-case class productScore(productId : Int,
-                        score: Double,
+case class ProductInfluence(productId : Int,
+                        influenceScore: Double,
                         percentage: Double)
 
-case class productExplanation(explainedPid: Int,
-                        score: Double,
-                        productScores: Array[productScore])
+case class ProductExplanation(explainedPid: Int,
+                        score: Double, productInfluence: Array[ProductInfluence])
 
-case class userExplanation(user: Int,
-                           productExplanations: Array[productExplanation])
+case class UserExplanation(user: Int,
+                           productExplanations: Array[ProductExplanation])
 
 
 
@@ -42,30 +41,28 @@ case class userExplanation(user: Int,
 class ALSExplain extends Serializable {
   def explain( prodFactors: RDD[(Int, Array[Double])],
                ratings: RDD[Rating], lambda: Double, alpha: Double, topExplanation: Int):
-  RDD[userExplanation] = {
+  RDD[UserExplanation] = {
     val sc = prodFactors.context
-    val indexedProdFactors = prodFactors.zipWithIndex().cache()
-    val productIndexLookup = indexedProdFactors.map( v => ( v._1._1, v._2))
+    val indexedProdFactors = prodFactors.zipWithIndex()
     val productToIndex = indexedProdFactors.map( v => (v._1._1, (v._2, v._1._2)))
-    val indexedFactors = indexedProdFactors.map( v => (v._2, v._1._2)).cache()
+    val indexedFactors = indexedProdFactors.map( v => (v._2, v._1._2))
 
     val YIndexMatrix = toIndexedMatrix(indexedFactors)
-    val Y = YIndexMatrix.toBlockMatrix().cache()
-    val YT = Y.transpose.cache()
-    val YTY = YT.multiply(Y).cache()
-    // printIndexedMatrix(YTY.toIndexedRowMatrix())
+    val Y = YIndexMatrix.toBlockMatrix()
+    val YT = Y.transpose
+    val YTY = YT.multiply(Y)
 
     val local_YT = sc.broadcast(YT.toLocalMatrix().asBreeze).value
     val local_Y = sc.broadcast(Y.toLocalMatrix().asBreeze).value
     val local_YTY = sc.broadcast(YTY.toLocalMatrix().asBreeze).value
-    val indexCollect = productIndexLookup.collect()
+    val indexProdCollect = indexedProdFactors.map( v => ( v._1._1, v._2)).collect()
 
-    val lambdaI = sc.broadcast(diag(breeze.linalg.DenseVector(List.fill(local_YTY.rows)
+    val lambdaI = sc.broadcast(diag(DenseVector(List.fill(local_YTY.rows)
     (lambda).toArray))).value
 
-    val indexMap = sc.broadcast(indexCollect
+    val indexMap = sc.broadcast(indexProdCollect
       .map(keyValue => (keyValue._1, keyValue._2)).toMap).value
-    val productMap = sc.broadcast(indexCollect
+    val productMap = sc.broadcast(indexProdCollect
       .map( keyValue => (keyValue._2, keyValue._1)).toMap).value
 
     val userExplanationRDD = ratings
@@ -74,49 +71,51 @@ class ALSExplain extends Serializable {
       .map{
         case (_, joinedRow) =>
           (joinedRow._1.user, (joinedRow._2, (joinedRow._1.rating * alpha)))
-      }.groupByKey().map( group => userExplanation(group._1,
-      userExlain(group._2.toArray, local_YT, local_Y, local_YTY,
+      }.groupByKey().map( group => UserExplanation(group._1,
+      generateUserExplanation(group._2.toArray, local_YT, local_Y, local_YTY,
         lambdaI, indexMap, productMap, topExplanation)))
     userExplanationRDD
   }
+  /** generate user Explanation for all products: [productId, productExplanation] */
+  def generateUserExplanation(CuArray: Array[((Long, Array[Double]), Double)],
+                              local_YT: Matrix[Double],
+                              local_Y: Matrix[Double],
+                              local_YTY: Matrix[Double], lambdaI: Matrix[Double],
+                              indexLookup: Map[Int, Long],
+                              productLookup: Map[Long, Int],
+                              topExplanation: Int) : Array[ProductExplanation] = {
 
-  def userExlain(array: Array[((Long, Array[Double]), Double)], local_YT: Matrix[Double],
-                 local_Y: Matrix[Double],
-                 local_YTY: Matrix[Double], lambdaI: Matrix[Double],
-                 indexLookup: Map[Int, Long],
-                 productLookup: Map[Long, Int], topExplanation: Int) : Array[productExplanation] = {
+    val YTCUMinusI = CuArray.map{ case row =>
+      (row._1._1, row._1._2.map(_ * row._2))}.sortBy(_._1).map(_._2)
+    val YTCUMinusIMatrix = new DenseMatrix(local_YTY.rows,
+      CuArray.length, YTCUMinusI.flatten.toArray)
 
-    val YTCUMinusI = array.map(row => (row._1._1, row._1._2.map(_ * row._2)))
-      .toSeq.sortBy(_._1).map(_._2.toSeq)
-    val YTCUMinusIMatrix = new breeze.linalg.
-    DenseMatrix(local_YTY.rows, array.length, YTCUMinusI.flatten.toArray)
+    val YTCU = CuArray.map(row => (row._1._1, row._1._2.map( _ * (row._2 + 1))))
+      .sortBy(_._1).map(_._2)
+    val YTCUMatrix = new DenseMatrix(local_YTY.rows, CuArray.length, YTCU.flatten.toArray)
 
-    val YTCU = array.map(row => (row._1._1, row._1._2.map( _ * (row._2 + 1))))
-      .toSeq.sortBy(_._1).map(_._2.toSeq)
-    val YTCUMatrix = new breeze.linalg.
-    DenseMatrix(local_YTY.rows, array.length, YTCU.flatten.toArray)
-
-    val cuIndex = array.sortBy(_._1._1).map(_._1._1)
+    val cuIndex = CuArray.sortBy(_._1._1).map(_._1._1)
       .zipWithIndex.map( row => (row._2, row._1)).toMap
 
-    val Y = array.map(row => (row._1._1, row._1._2)).toSeq.sortBy(_._1).map(_._2.toSeq)
-    val YMatrix = new breeze.linalg.DenseMatrix(local_YTY.rows, array.length, Y.flatten.toArray).t
+    val Y = CuArray.map(row => (row._1._1, row._1._2)).sortBy(_._1).map(_._2)
+    val YMatrix = new DenseMatrix(local_YTY.rows, CuArray.length, Y.flatten.toArray).t
 
     val A = YTCUMinusIMatrix * YMatrix
     val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI.toDenseMatrix).toDenseMatrix
     val S = (local_Y * W * YTCUMatrix).toDenseMatrix
-    S(*, ::).map( x => generateExplain(x, cuIndex, productLookup, topExplanation))
+    S(*, ::).map( x => generateProductExplanation(x, cuIndex, productLookup, topExplanation))
       .toArray.zipWithIndex.map(
-      row => productExplanation(productLookup(row._2), row._1._1, row._1._2))
+      row => ProductExplanation(productLookup(row._2), row._1._1, row._1._2))
       .sortBy(_.explainedPid)
   }
 
-  def generateExplain(row: breeze.linalg.Vector[Double],
-                      cuIndex: Map[Int, Long],
-                      productLookup: Map[Long, Int],
-                      topExplanation: Int): (Double, Array[productScore]) =
+  /** generate Product Explanation: productId, influenceScore, percentage */
+  def generateProductExplanation(row: Vector[Double],
+                                 cuIndex: Map[Int, Long],
+                                 productLookup: Map[Long, Int],
+                                 topExplanation: Int): (Double, Array[ProductInfluence]) =
   {
-    val result : ListBuffer[productScore] = new ListBuffer[productScore]
+    val result : ListBuffer[ProductInfluence] = new ListBuffer[ProductInfluence]
     var sum: Double = 0.0
     for ( key <- cuIndex ) {
       val score = row(key._1)
@@ -125,9 +124,9 @@ class ALSExplain extends Serializable {
 
     for ( key <- cuIndex ) {
       val score = row(key._1)
-      val item = new productScore(
+      val item = new ProductInfluence(
         productId = productLookup(key._2),
-        score = score,
+        influenceScore = score,
         percentage = score/sum
       )
       result += item
@@ -136,13 +135,10 @@ class ALSExplain extends Serializable {
     (sum, result.sortBy(-_.percentage).take(topExplanation).toArray)
   }
 
+  /** Convert features Rdd to IndexedRowMatrix */
   def toIndexedMatrix(features: RDD[(Long, Array[Double])]): IndexedRowMatrix = {
     val rows = features.map { case (i, xs) => IndexedRow(i, Vectors.dense(xs)) }
     new IndexedRowMatrix(rows)
-  }
-
-  def printIndexedMatrix(matrix: IndexedRowMatrix): Unit = {
-    matrix.rows.map( v => (v.index, v.vector.toArray.mkString(","))).collect().foreach(println)
   }
 
 }

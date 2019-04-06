@@ -19,7 +19,6 @@ package org.apache.spark.ml.recommendation
 
 import scala.collection.mutable.WrappedArray
 
-import org.apache.spark.annotation.{DeveloperApi, Since}
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset}
