@@ -57,8 +57,6 @@ class ALSExplain extends Serializable {
     val local_YTY = sc.broadcast(YTY.toLocalMatrix().asBreeze).value
     val indexProdCollect = indexedProdFactors.map( v => ( v._1._1, v._2)).collect()
 
-    val lambdaI = sc.broadcast(diag(DenseVector(List.fill(local_YTY.rows)
-    (lambda).toArray))).value
 
     val indexMap = sc.broadcast(indexProdCollect
       .map(keyValue => (keyValue._1, keyValue._2)).toMap).value
@@ -73,14 +71,14 @@ class ALSExplain extends Serializable {
           (joinedRow._1.user, (joinedRow._2, (joinedRow._1.rating * alpha)))
       }.groupByKey().map( group => UserExplanation(group._1,
       generateUserExplanation(group._2.toArray, local_YT, local_Y, local_YTY,
-        lambdaI, indexMap, productMap, topExplanation)))
+        lambda, indexMap, productMap, topExplanation)))
     userExplanationRDD
   }
   /** generate user Explanation for all products: [productId, productExplanation] */
   def generateUserExplanation(CuArray: Array[((Long, Array[Double]), Double)],
                               local_YT: Matrix[Double],
                               local_Y: Matrix[Double],
-                              local_YTY: Matrix[Double], lambdaI: Matrix[Double],
+                              local_YTY: Matrix[Double], lambda: Double,
                               indexLookup: Map[Int, Long],
                               productLookup: Map[Long, Int],
                               topExplanation: Int) : Array[ProductExplanation] = {
@@ -101,7 +99,9 @@ class ALSExplain extends Serializable {
     val YMatrix = new DenseMatrix(local_YTY.rows, CuArray.length, Y.flatten.toArray).t
 
     val A = YTCUMinusIMatrix * YMatrix
-    val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI.toDenseMatrix).toDenseMatrix
+    val lambdaI_cu = diag(DenseVector(List.fill(local_YTY.rows)
+    (lambda *  CuArray.length).toArray))
+    val W = inv(local_YTY.toDenseMatrix + A.toDenseMatrix + lambdaI_cu.toDenseMatrix).toDenseMatrix
     val S = (local_Y * W * YTCUMatrix).toDenseMatrix
     S(*, ::).map( x => generateProductExplanation(x, cuIndex, productLookup, topExplanation))
       .toArray.zipWithIndex.map(
