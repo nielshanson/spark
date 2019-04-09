@@ -43,28 +43,62 @@ class ALSExplain extends Serializable {
                ratings: RDD[Rating], lambda: Double, alpha: Double, topExplanation: Int):
   RDD[UserExplanation] = {
     val sc = prodFactors.context
+    
+    // Create row number for each product factor
+    // ((prodId, prodFactor), prodRowNum)
     val indexedProdFactors = prodFactors.zipWithIndex()
+    // (prodId, (prodRowNum, prodFactor))
     val productToIndex = indexedProdFactors.map( v => (v._1._1, (v._2, v._1._2)))
+    // (prodRowNum, prodFactor)
     val indexedFactors = indexedProdFactors.map( v => (v._2, v._1._2))
-
+    // Convert indexedFactors to Spark matricies and compute Y, YT, YTY
     val YIndexMatrix = toIndexedMatrix(indexedFactors)
     val Y = YIndexMatrix.toBlockMatrix()
     val YT = Y.transpose
     val YTY = YT.multiply(Y)
-
+    
+    // Create local versions of these to send to the executors
     val local_YT = sc.broadcast(YT.toLocalMatrix().asBreeze).value
     val local_Y = sc.broadcast(Y.toLocalMatrix().asBreeze).value
     val local_YTY = sc.broadcast(YTY.toLocalMatrix().asBreeze).value
-    val indexProdCollect = indexedProdFactors.map( v => ( v._1._1, v._2)).collect()
-
-    val lambdaI = sc.broadcast(diag(DenseVector(List.fill(local_YTY.rows)
-    (lambda).toArray))).value
-
+    
+    // Create maps for lookup
+    val indexProdCollect = indexedProdFactors.map(v => (v._1._1, v._2)).collect()
+    // (prodId to prodRow)
     val indexMap = sc.broadcast(indexProdCollect
       .map(keyValue => (keyValue._1, keyValue._2)).toMap).value
+      // (prodRow to prodId)
     val productMap = sc.broadcast(indexProdCollect
       .map( keyValue => (keyValue._2, keyValue._1)).toMap).value
-
+    
+    // scalastyle:off
+    println("indexedProdFactors:")
+    indexedProdFactors.take(5).foreach(println)
+    // ((0,[D@74087d81),0)
+    // ((10,[D@5027cd31),1)
+    // ((20,[D@6f606e87),2)
+    // ((30,[D@30bb9392),3)
+    // ((40,[D@7680471),4)
+    println("productToIndex:")
+    productToIndex.take(5).foreach(println)
+    // productToIndex:
+    // (0,(0,[D@56b1c4f6))
+    // (10,(1,[D@73c2eab7))
+    // (20,(2,[D@239d143))
+    // (30,(3,[D@652c2be))
+    // (40,(4,[D@5e1c20f6))
+    println("indexedFactors:")
+    indexedFactors.take(5).foreach(println)
+    // (0,[D@25b6568a)
+    // (1,[D@79d24c32)
+    // (2,[D@556db970)
+    // (3,[D@3a010811)
+    // (4,[D@2d140bdd)
+    // scalastyle:on
+    
+    val lambdaI = sc.broadcast(diag(DenseVector(List.fill(local_YTY.rows)
+    (lambda).toArray))).value
+    
     val userExplanationRDD = ratings
       .map( rating => (rating.product, rating))
       .join(productToIndex)
@@ -84,7 +118,6 @@ class ALSExplain extends Serializable {
                               indexLookup: Map[Int, Long],
                               productLookup: Map[Long, Int],
                               topExplanation: Int) : Array[ProductExplanation] = {
-
     val YTCUMinusI = CuArray.map{ case row =>
       (row._1._1, row._1._2.map(_ * row._2))}.sortBy(_._1).map(_._2)
     val YTCUMinusIMatrix = new DenseMatrix(local_YTY.rows,
