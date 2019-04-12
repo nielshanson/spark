@@ -55,7 +55,8 @@ if __name__ == "__main__":
               coldStartStrategy="drop")
      
     model = als.fit(training)
-    explanation = ALSExplain().explain(model.itemFactors, training, userCol="userId", itemCol="movieId", ratingCol="rating", topExplanation = 3, _lambda = 0.01, alpha = 1.0)
+    explanation = ALSExplain().explain(model.itemFactors, training, userCol="userId", itemCol="movieId", ratingCol="rating",
+              topExplanation = 3, _lambda = 0.01, alpha = 1.0)
     explanation.printSchema()
     explanation.show(1, False)
     predictions = model.transform(ratings)
