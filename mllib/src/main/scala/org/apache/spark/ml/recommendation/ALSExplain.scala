@@ -25,14 +25,14 @@ import org.apache.spark.sql.{DataFrame, Dataset}
 
 @SerialVersionUID(100L)
 class ALSExplain extends Serializable{
-  def explain( itemDF: DataFrame,
-               dataset: Dataset[_],
-               userCol: String,
-               itemCol: String,
-               ratingCol: String,
-               topExplanation: Int,
-               lambda: Double = 0.1,
-               alpha: Double = 1.0): DataFrame = {
+  def explain(itemDF: DataFrame,
+              dataset: Dataset[_],
+              userCol: String,
+              itemCol: String,
+              ratingCol: String,
+              topExplanation: Int,
+              regParam: Double = 0.1,
+              alpha: Double = 1.0): DataFrame = {
 
     val spark = itemDF.sparkSession
     val ratings = dataset
@@ -46,10 +46,9 @@ class ALSExplain extends Serializable{
       itemDF.rdd.map(row => (row.getInt(0),
         row.getAs[WrappedArray[Float]](1).toArray.map(_.toDouble)))
     val explanation = new org.apache.spark.mllib.recommendation.ALSExplain()
-      .explain(prodFactors, ratings, lambda, alpha, topExplanation)
+      .explain(prodFactors, ratings, regParam, alpha, topExplanation)
     val df = spark.createDataFrame(explanation)
     df
   }
-
-  }
+}
 

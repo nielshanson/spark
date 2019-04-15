@@ -458,7 +458,10 @@ class ALSModel(JavaModel, JavaMLWritable, JavaMLReadable):
 @inherit_doc
 class ALSExplain(JavaWrapper):
     """
-    ALSExplain
+    ALSExplain implements explainability scores for recommendations for the  implicit Alternating Least
+    Squares (ALS) matrix factorization model.
+    The algorithm used is based on "Collaborative Filtering for Implicit Feedback Datasets",
+    available at https://doi.org/10.1109/ICDM.2008.22.
     """
     @keyword_only
     def __init__(self):
@@ -466,11 +469,23 @@ class ALSExplain(JavaWrapper):
         self._java_obj = self._new_java_obj("org.apache.spark.ml.recommendation.ALSExplain")
 
     @since("2.3.0")
-    def explain(self, itemDF, dataset, userCol, itemCol, ratingCol, topExplanation,  _lambda = 0.1, alpha = 1.0):
+    def explain(self, itemFactors, dataset, userCol, itemCol, ratingCol, topExplanation = 10, regParam = 0.1, alpha = 1.0):
         """
-        Returns explanation for each user
+        Generates explainability scores for recommendations for the  implicit Alternating Least
+        Squares (ALS) matrix factorization model.
+        
+        :param itemFactors: itemFactors DF returned from ALSModel object with implicitPrefs=True
+        :param dataset: ratings dataframe used to fit the implicit ALSModel
+        :param userCol: column name for user ids
+        :param itemCol: column name for item ids
+        :param ratingCol: column name for rating values
+        :param topExplanation: integer limit to the number of explaining items to return
+        :param regParam: regularization constant used to fit the implicit ALSModel
+        :param alpha: alpha constant used to fit the implicit ALSModel
+        :return: a DataFrame UserExplanation(user, productExplanations) objects with a list of
+                 influenceScore() for each recommended item
         """
-        return self._call_java("explain", itemDF, dataset, userCol, itemCol, ratingCol, topExplanation, _lambda, alpha)
+        return self._call_java("explain", itemFactors, dataset, userCol, itemCol, ratingCol, topExplanation, regParam, alpha)
 
 
 if __name__ == "__main__":

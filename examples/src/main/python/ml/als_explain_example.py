@@ -51,11 +51,26 @@ if __name__ == "__main__":
 
     # Build the recommendation model using ALS on the training data
     # Note we set cold start strategy to 'drop' to ensure we don't get NaN evaluation metrics
-    als = ALS(maxIter=5, regParam=0.01, implicitPrefs=True,userCol="userId", itemCol="movieId", ratingCol="rating",
+    als = ALS(alpha = 1.0,
+              maxIter=5,
+              regParam=0.01,
+              implicitPrefs=True,
+              userCol="userId",
+              itemCol="movieId",
+              ratingCol="rating",
               coldStartStrategy="drop")
      
     model = als.fit(training)
-    explanation = ALSExplain().explain(model.itemFactors, training, userCol="userId", itemCol="movieId", ratingCol="rating", topExplanation = 3)
+    
+    # Use itemFactors and training data with ALSExplain to generate recommendation explainations
+    explanation = ALSExplain().explain(model.itemFactors,
+                                       training,
+                                       userCol="userId",
+                                       itemCol="movieId",
+                                       ratingCol="rating",
+                                       topExplanation=3,
+                                       regParam=0.01,
+                                       alpha=1.0)
     explanation.printSchema()
     explanation.show(1, False)
     predictions = model.transform(ratings)
