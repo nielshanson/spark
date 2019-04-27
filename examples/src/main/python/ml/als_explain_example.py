@@ -41,7 +41,7 @@ if __name__ == "__main__":
     logger = sc._jvm.org.apache.log4j
     logger.LogManager.getLogger("org"). setLevel( logger.Level.ERROR )
     logger.LogManager.getLogger("akka").setLevel( logger.Level.ERROR )
-    # $example on$
+
     lines = spark.read.text("data/mllib/als/sample_movielens_ratings.txt").rdd
     parts = lines.map(lambda row: row.value.split("::"))
     ratingsRDD = parts.map(lambda p: Row(userId=int(p[0]), movieId=int(p[1]),
@@ -61,7 +61,6 @@ if __name__ == "__main__":
               coldStartStrategy="drop")
      
     model = als.fit(training)
-<<<<<<< HEAD
     
     # Use itemFactors and training data with ALSExplain to generate recommendation explainations
     explanation = ALSExplain().explain(model.itemFactors,
@@ -72,10 +71,6 @@ if __name__ == "__main__":
                                        topExplanation=3,
                                        regParam=0.01,
                                        alpha=1.0)
-=======
-    explanation = ALSExplain().explain(model.itemFactors, training, userCol="userId", itemCol="movieId", ratingCol="rating",
-              topExplanation = 3, _lambda = 0.01, alpha = 1.0)
->>>>>>> 1fda3b31456f8f4b9e0c7822b901b214a2c1cd54
     explanation.printSchema()
     explanation.show(1, False)
     predictions = model.transform(ratings)
