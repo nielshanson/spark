@@ -84,119 +84,13 @@ object ALSExplainSuite {
   }
 }
 
-
+// scalastyle:off
 class ALSExplainSuite extends SparkFunSuite with MLlibTestSparkContext {
-
-  // test("rank-1 matrices") {
-  //   testALS(50, 100, 1, 15, 0.7, 0.3)
-  // }
-  //
-  // test("rank-1 matrices bulk") {
-  //   testALS(50, 100, 1, 15, 0.7, 0.3, false, true)
-  // }
-  //
-  // test("rank-2 matrices") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.3)
-  // }
-  //
-  // test("rank-2 matrices bulk") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.3, false, true)
-  // }
-  //
-  // test("rank-1 matrices implicit") {
-  //   testALS(80, 160, 1, 15, 0.7, 0.4, true)
-  // }
-  //
-  // test("rank-1 matrices implicit bulk") {
-  //   testALS(80, 160, 1, 15, 0.7, 0.4, true, true)
-  // }
-  //
-  // test("rank-2 matrices implicit") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.4, true)
-  // }
-  //
-  // test("rank-2 matrices implicit bulk") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.4, true, true)
-  // }
-  //
-  // test("rank-2 matrices implicit negative") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.4, true, false, true)
-  // }
-  //
-  // test("rank-2 matrices with different user and product blocks") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.4, numUserBlocks = 4, numProductBlocks = 2)
-  // }
-  //
-  // test("pseudorandomness") {
-  //   val ratings = sc.parallelize(ALSSuite.generateRatings(10, 20, 5, 0.5, false, false)._1, 2)
-  //   val model11 = ALS.train(ratings, 5, 1, 1.0, 2, 1)
-  //   val model12 = ALS.train(ratings, 5, 1, 1.0, 2, 1)
-  //   val u11 = model11.userFeatures.values.flatMap(_.toList).collect().toList
-  //   val u12 = model12.userFeatures.values.flatMap(_.toList).collect().toList
-  //   val model2 = ALS.train(ratings, 5, 1, 1.0, 2, 2)
-  //   val u2 = model2.userFeatures.values.flatMap(_.toList).collect().toList
-  //   assert(u11 == u12)
-  //   assert(u11 != u2)
-  // }
-  //
-  // test("Storage Level for RDDs in model") {
-  //   val ratings = sc.parallelize(ALSSuite.generateRatings(10, 20, 5, 0.5, false, false)._1, 2)
-  //   var storageLevel = StorageLevel.MEMORY_ONLY
-  //   var model = new ALS()
-  //     .setRank(5)
-  //     .setIterations(1)
-  //     .setLambda(1.0)
-  //     .setBlocks(2)
-  //     .setSeed(1)
-  //     .setFinalRDDStorageLevel(storageLevel)
-  //     .run(ratings)
-  //   assert(model.productFeatures.getStorageLevel == storageLevel)
-  //   assert(model.userFeatures.getStorageLevel == storageLevel)
-  //   storageLevel = StorageLevel.DISK_ONLY
-  //   model = new ALS()
-  //     .setRank(5)
-  //     .setIterations(1)
-  //     .setLambda(1.0)
-  //     .setBlocks(2)
-  //     .setSeed(1)
-  //     .setFinalRDDStorageLevel(storageLevel)
-  //     .run(ratings)
-  //   assert(model.productFeatures.getStorageLevel == storageLevel)
-  //   assert(model.userFeatures.getStorageLevel == storageLevel)
-  // }
-  //
-  // test("negative ids") {
-  //   val data = ALSSuite.generateRatings(50, 50, 2, 0.7, false, false)
-  //   val ratings = sc.parallelize(data._1.map { case Rating(u, p, r) =>
-  //     Rating(u - 25, p - 25, r)
-  //   })
-  //   val correct = data._2
-  //   val model = ALS.train(ratings, 5, 15)
-  //
-  //   val pairs = Array.tabulate(50, 50)((u, p) => (u - 25, p - 25)).flatten
-  //   val ans = model.predict(sc.parallelize(pairs)).collect()
-  //   ans.foreach { r =>
-  //     val u = r.user + 25
-  //     val p = r.product + 25
-  //     val v = r.rating
-  //     val error = v - correct(u, p)
-  //     assert(math.abs(error) < 0.4)
-  //   }
-  // }
-  //
-  // test("NNALS, rank 2") {
-  //   testALS(100, 200, 2, 15, 0.7, 0.4, false, false, false, -1, -1, false)
-  // }
-  //
-  // test("SPARK-18268: ALS with empty RDD should fail with better message") {
-  //   val ratings = sc.parallelize(Array.empty[Rating])
-  //   intercept[IllegalArgumentException] {
-  //     new ALS().run(ratings)
-  //   }
-  // }
-
+    test("rank-5 explain") {
+        testALSExplain(50,100,5,5,0.7,0.3)
+    }
   /**
-   * Test if we can correctly factorize R = U * P where U and P are of known rank.
+   * Test if ALS model matches explain
    *
    * @param users number of users
    * @param products number of products
@@ -204,14 +98,12 @@ class ALSExplainSuite extends SparkFunSuite with MLlibTestSparkContext {
    * @param iterations number of iterations to run
    * @param samplingRate what fraction of the user-product pairs are known
    * @param matchThreshold max difference allowed to consider a predicted rating correct
-   * @param implicitPrefs flag to test implicit feedback
    * @param bulkPredict flag to test bulk prediction
    * @param negativeWeights whether the generated data can contain negative values
    * @param numUserBlocks number of user blocks to partition users into
    * @param numProductBlocks number of product blocks to partition products into
    * @param negativeFactors whether the generated user/product factors can have negative entries
    */
-  // scalastyle:off
   def testALSExplain(
       users: Int,
       products: Int,
@@ -223,13 +115,11 @@ class ALSExplainSuite extends SparkFunSuite with MLlibTestSparkContext {
       negativeWeights: Boolean = false,
       numUserBlocks: Int = -1,
       numProductBlocks: Int = -1,
-      negativeFactors: Boolean = true) {
-    // scalastyle:on
-    
+      negativeFactors: Boolean = true){
+
+    val implicitPrefs: Boolean = true
     val numUserBlocks: Int = -1
     val numProductBlocks: Int = -1
-    
-    ratings: RDD[Rating], lambda: Double, alpha: Double, topExplanation: Int
 
     val (sampledRatings, trueRatings, truePrefs) = ALSSuite.generateRatings(users, products,
       features, samplingRate, implicitPrefs, negativeWeights, negativeFactors)
@@ -241,60 +131,46 @@ class ALSExplainSuite extends SparkFunSuite with MLlibTestSparkContext {
       .setIterations(iterations)
       .setAlpha(1.0)
       .setImplicitPrefs(implicitPrefs)
-      .setLambda(0.01)
+      .setLambda(0.00)
       .setSeed(0L)
-      .setNonnegative(!negativeFactors)
+      // .setNonnegative(!negativeFactors)
       .run(sc.parallelize(sampledRatings))
 
-    val predictedU = new BDM[Double](users, features)
-    for ((u, vec) <- model.userFeatures.collect(); i <- 0 until features) {
-      predictedU(u, i) = vec(i)
-    }
-    val predictedP = new BDM[Double](products, features)
-    for ((p, vec) <- model.productFeatures.collect(); i <- 0 until features) {
-      predictedP(p, i) = vec(i)
-    }
-    val predictedRatings =
-      if (bulkPredict) {
-        val allRatings = new BDM[Double](users, products)
-        val usersProducts = for (u <- 0 until users; p <- 0 until products) yield (u, p)
-        val userProductsRDD = sc.parallelize(usersProducts)
-        model.predict(userProductsRDD).collect().foreach { elem =>
-          allRatings(elem.user, elem.product) = elem.rating
-        }
-        allRatings
-      } else {
-        predictedU * predictedP.t
-      }
+    val usersProducts = for (u <- 0 until users; p <- 0 until products) yield (u, p)
+    val userProductsRDD = sc.parallelize(usersProducts)
+    val predictedRatings = model.predict(userProductsRDD)
 
-    if (!implicitPrefs) {
-      for (u <- 0 until users; p <- 0 until products) {
-        val prediction = predictedRatings(u, p)
-        val correct = trueRatings(u, p)
-        if (math.abs(prediction - correct) > matchThreshold) {
-          fail(("Model failed to predict (%d, %d): %f vs %f\ncorr: %s\npred: %s\nU: %s\n P: %s")
-            .format(u, p, correct, prediction, trueRatings, predictedRatings, predictedU,
-              predictedP))
-        }
-      }
-    } else {
-      // For implicit prefs we use the confidence-weighted RMSE to test (ref Mahout's tests)
-      var sqErr = 0.0
-      var denom = 0.0
-      for (u <- 0 until users; p <- 0 until products) {
-        val prediction = predictedRatings(u, p)
-        val truePref = truePrefs(u, p)
-        val confidence = 1.0 + abs(trueRatings(u, p))
-        val err = confidence * (truePref - prediction) * (truePref - prediction)
-        sqErr += err
-        denom += confidence
-      }
-      val rmse = math.sqrt(sqErr / denom)
-      if (rmse > matchThreshold) {
-        fail("Model failed to predict RMSE: %f\ncorr: %s\npred: %s\nU: %s\n P: %s".format(
-          rmse, truePrefs, predictedRatings, predictedU, predictedP))
-      }
-    }
+    val explanation = new ALSExplain().explain(model.productFeatures,
+                                         sc.parallelize(sampledRatings),
+                                         topExplanation=3,
+                                         regParam=0.00,
+                                         alpha=1.0)
+    val explanation_res = explanation.map(x => (x.productExplanations.map(y => (x.user, y.explainedPid, y.score))))
+                                     .flatMap(x => x)
+                                     .distinct()
+                                     .map(x => ((x._1, x._2), x._3))
+    val predictedRatings_res = predictedRatings.map(x => ((x.user, x.product), x.rating))
+    
+    val final_res = explanation_res.union(predictedRatings_res).groupByKey()
+    final_res.take(5).foreach(println)
+    // val explain_table = explanation
+    //                     .select("user", F.explode("productExplanations"))
+    //                     .select("user", "col.explainedPid", "col.score", "col.productInfluence")
+    //                     .toDF("user", "explainedPid", "score", "productInfluence")
+    //                     .select("user", "explainedPid", "score", F.explode("productInfluence"))
+    //                     .select("user", "explainedPid", "score", "col.productId", "col.influenceScore", "col.percentage")
+    //                     .toDF("user", "explainedPid", "score", "productId", "influenceScore", "percentage")
+    //
+    // val compare_explain_table = (
+    //     explain_table.
+    //     select("user", "explainedPid", "score").
+    //     toDF("userId", "movieId", "newPrediction").
+    //     distinct()
+    // )
+    // val compare_table = predictions.join(compare_explain_table, Seq("userId", "movieId"))
+    // println(compare_table.stat.corr("prediction", "newPrediction"))
+    
   }
 }
+// scalastyle:on
 
