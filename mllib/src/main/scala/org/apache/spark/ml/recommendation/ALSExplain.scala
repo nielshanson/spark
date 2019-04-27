@@ -19,9 +19,16 @@ package org.apache.spark.ml.recommendation
 
 import scala.collection.mutable.WrappedArray
 
+import org.apache.spark.ml.recommendation.ALS._
+import org.apache.spark.ml.util._
 import org.apache.spark.mllib.recommendation.Rating
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Dataset}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Row, SparkSession}
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.Utils
 
 @SerialVersionUID(100L)
 class ALSExplain extends Serializable{
@@ -33,13 +40,15 @@ class ALSExplain extends Serializable{
               topExplanation: Int,
               regParam: Double = 0.1,
               alpha: Double = 1.0): DataFrame = {
+    import dataset.sparkSession.implicits._
+    // validateAndTransformSchema((StructType)dataset.schema, userCol, itemCol, ratingCol)
 
-    val spark = itemDF.sparkSession
+    val r = if (col(ratingCol) != "") col(ratingCol).cast(FloatType) else lit(1.0f)
     val ratings = dataset
-      .select(userCol, itemCol, ratingCol)
+      .select(checkedCast(col(userCol)), checkedCast(col(itemCol)), r)
       .rdd
       .map { row =>
-        Rating(row.getLong(0).toInt, row.getLong(1).toInt, row.getDouble(2))
+        Rating(row.getInt(0), row.getInt(1), row.getFloat(2))
       }
 
     val prodFactors: RDD[(Int, Array[Double])] =
@@ -47,8 +56,31 @@ class ALSExplain extends Serializable{
         row.getAs[WrappedArray[Float]](1).toArray.map(_.toDouble)))
     val explanation = new org.apache.spark.mllib.recommendation.ALSExplain()
       .explain(prodFactors, ratings, regParam, alpha, topExplanation)
-    val df = spark.createDataFrame(explanation)
+    val df = dataset.sparkSession.createDataFrame(explanation)
     df
+  }
+
+  /**
+   * Attempts to safely cast a user/item id to an Int. Throws an exception if the value is
+   * out of integer range or contains a fractional part.
+   */
+  protected[recommendation] val checkedCast = udf { (n: Any) =>
+    n match {
+      case v: Int => v // Avoid unnecessary casting
+      case v: Number =>
+        val intV = v.intValue
+        // Checks if number within Int range and has no fractional part.
+        if (v.doubleValue == intV) {
+          intV
+        } else {
+          throw new IllegalArgumentException(s"ALS only supports values in Integer range " +
+            s"and without fractional part for columns col{col(userCol)} and col{col(itemCol)}. " +
+            s"Value coln was either out of Integer range or contained a fractional part that " +
+            s"could not be converted.")
+        }
+      case _ => throw new IllegalArgumentException(s"ALS only supports values in Integer range " +
+        s"for columns col{col(userCol)} and col{col(itemCol)}. Value coln was not numeric.")
+    }
   }
 }
 
