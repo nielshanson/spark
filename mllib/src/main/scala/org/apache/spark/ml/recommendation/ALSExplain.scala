@@ -81,6 +81,33 @@ class ALSExplain extends Serializable{
       case _ => throw new IllegalArgumentException(s"ALS only supports values in Integer range " +
         s"for columns col{col(userCol)} and col{col(itemCol)}. Value coln was not numeric.")
     }
+
+  def explainUser(userDF: DataFrame,
+                  itemDF: DataFrame,
+                  dataset: Dataset[_],
+                  userCol: String,
+                  itemCol: String,
+                  ratingCol: String,
+                  topExplanation: Int,
+                  regParam: Double = 0.1,
+                  alpha: Double = 1.0): DataFrame = {
+
+    val spark = itemDF.sparkSession
+    val ratings = dataset
+        .join(userDF, userCol)
+      .select(userCol, itemCol, ratingCol)
+      .rdd
+      .map { row =>
+        Rating(row.getLong(0).toInt, row.getLong(1).toInt, row.getDouble(2))
+      }
+
+    val prodFactors: RDD[(Int, Array[Double])] =
+      itemDF.rdd.map(row => (row.getInt(0),
+        row.getAs[WrappedArray[Float]](1).toArray.map(_.toDouble)))
+    val explanation = new org.apache.spark.mllib.recommendation.ALSExplain()
+      .explain(prodFactors, ratings, regParam, alpha, topExplanation)
+    val df = spark.createDataFrame(explanation)
+    df
   }
 }
 

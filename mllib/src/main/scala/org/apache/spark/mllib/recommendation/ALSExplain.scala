@@ -153,7 +153,7 @@ class ALSExplain extends Serializable {
                               local_YTY: Matrix[Double],
                               regParam: Double,
                               productLookup: Map[Long, Int],
-                              topExplanation: Int) : Array[ProductExplanation] = {
+                              topExplanation: Int) : Array[ProductExplanation] = synchronized{
     // Construct YTCuMinusI matrix
     val YTCUMinusI = CuArray.map{
         case ((prodRow, prodFactor), cuValue) =>
@@ -212,7 +212,7 @@ class ALSExplain extends Serializable {
                                  cuIndex: Map[Int, Long],
                                  productLookup: Map[Long, Int],
                                  topExplanation: Int): (Double, Array[ProductInfluence]) =
-  {
+  synchronized{
     val result : ListBuffer[ProductInfluence] = new ListBuffer[ProductInfluence]
 
     // Denominator for precent

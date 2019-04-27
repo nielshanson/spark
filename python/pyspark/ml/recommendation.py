@@ -487,6 +487,26 @@ class ALSExplain(JavaWrapper):
         """
         return self._call_java("explain", itemFactors, dataset, userCol, itemCol, ratingCol, topExplanation, regParam, alpha)
 
+    @since("2.3.0")
+    def explain_user(self, userDF, itemFactors, dataset, userCol, itemCol, ratingCol, topExplanation = 10, regParam = 0.1, alpha = 1.0):
+        """
+        Generates explainability scores for recommendations for the  implicit Alternating Least
+        Squares (ALS) matrix factorization model.
+
+        :param userDF: user subset to run ALS explanation
+        :param itemFactors: itemFactors DF returned from ALSModel object with implicitPrefs=True
+        :param dataset: ratings dataframe used to fit the implicit ALSModel
+        :param userCol: column name for user ids
+        :param itemCol: column name for item ids
+        :param ratingCol: column name for rating values
+        :param topExplanation: integer limit to the number of explaining items to return
+        :param regParam: regularization constant used to fit the implicit ALSModel
+        :param alpha: alpha constant used to fit the implicit ALSModel
+        :return: a DataFrame UserExplanation(user, productExplanations) objects with a list of
+                 influenceScore() for each recommended item
+        """
+        return self._call_java("explainUser", userDF, itemFactors, dataset, userCol, itemCol, ratingCol, topExplanation, regParam, alpha)
+
 
 if __name__ == "__main__":
     import doctest

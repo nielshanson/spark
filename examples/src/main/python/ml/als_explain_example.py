@@ -71,6 +71,10 @@ if __name__ == "__main__":
                                        topExplanation=3,
                                        regParam=0.01,
                                        alpha=1.0)
+<<<<<<< HEAD
+=======
+
+>>>>>>> 4c75f0035162c47e0a64bc82d3f8546fc645d1ae
     explanation.printSchema()
     explanation.show(1, False)
     predictions = model.transform(ratings)
